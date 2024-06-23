@@ -1,0 +1,3 @@
+(library
+ (name major)
+ (libraries base64 jose sqlite3 dream))
