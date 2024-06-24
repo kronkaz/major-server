@@ -47,8 +47,9 @@ let create_session auth ~voter_id ~duration =
 let create () =
   let test_login = Hashtbl.of_seq @@ List.to_seq [(0, "0000"); (1, "1111"); (2, "2222")] in
   let test_sessions =
-    let refresh_token = make_refresh_token ~voter_id:1 ~duration:300 in
-    let access_token = make_access_token ~voter_id:1 ~duration:300 in
+    (* zero durations on purpose for testing *)
+    let refresh_token = make_refresh_token ~voter_id:1 ~duration:0 in
+    let access_token = make_access_token ~voter_id:1 ~duration:0 in
     Hashtbl.of_seq @@ List.to_seq [(1, (access_token, refresh_token))]
   in
   { login = test_login; sessions = test_sessions }
