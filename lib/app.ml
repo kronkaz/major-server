@@ -7,7 +7,10 @@ module Make (Services : Services.S) = struct
     @@ Dream.logger
     @@ Dream.router [
       Dream.scope "/v1" [] [
-        Dream.get "/token" Api.get_token_handler;
+        Dream.get "/session" Api.create_session;
+        Dream.patch "/session/refresh" Api.refresh_session;
+        Dream.delete "/session" Api.delete_session;
+        Dream.get "/whoami" Api.whoami
       ]
     ]
 end
