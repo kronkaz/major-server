@@ -4,3 +4,5 @@ module type S = sig
   val create : unit -> db
   val name_of_voter : db -> int -> string option
 end
+
+module Default : S

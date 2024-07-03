@@ -27,10 +27,8 @@ module Make (Services : Services.S) = struct
       |> M.on_error `Bad_Request ~message:"Request body is not a valid JSON" in
     let* voter_id, password = M.lift_option (parse_credentials json)
       |> M.on_error `Bad_Request ~message:"JSON object does not have the expected shape" in
-    let* () =
-      M.guard (Auth.valid_credentials auth { voter_id; password })
-      |> M.on_error `Unauthorized ~message:"Invalid credentials"
-    in
+    let* () = M.guard (Auth.valid_credentials auth { voter_id; password })
+      |> M.on_error `Unauthorized ~message:"Invalid credentials" in
     let access_token, refresh_token = Auth.create_session auth ~voter_id in
     let response_data = `Assoc [
       ("access_token", `String access_token);

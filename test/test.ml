@@ -2,7 +2,7 @@ open Major
 
 let () =
   let module App = App.Make(struct
-    module Auth = Memory_auth
-    module Db = Memory_database
+    module Auth = Auth_service.Default
+    module Db = Database_service.Default
   end) in
   App.start ()

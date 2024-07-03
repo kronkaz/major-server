@@ -13,3 +13,5 @@ module type S = sig
   val refresh_session : auth -> refresh_token:string -> (string * string, string) result
   val delete_session : auth -> access_token:string -> (unit, string) result
 end
+
+module Default : S
