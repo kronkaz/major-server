@@ -10,7 +10,9 @@ module Make (Services : Services.S) = struct
         Dream.get "/session" Api.create_session;
         Dream.patch "/session/refresh" Api.refresh_session;
         Dream.delete "/session" Api.delete_session;
-        Dream.get "/whoami" Api.whoami
+        Dream.get "/whoami" Api.whoami;
+        Dream.get "/elections" Api.get_elections;
+        Dream.get "/elections/:id" Api.get_election_details
       ]
     ]
 end

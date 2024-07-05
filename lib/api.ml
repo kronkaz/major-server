@@ -63,8 +63,32 @@ module Make (Services : Services.S) = struct
       |> M.on_error `Internal_Server_Error ~message:"Voter not found" in
     M.ok @@ Dream.json ~status:`OK (Json.to_string @@ `Assoc [("name", `String name)])
 
+  let get_elections request = let open M.Syntax in
+    let* access_token = M.lift_option (parse_header_token request)
+      |> M.on_error `Unauthorized ~message:"Missing access token" in
+    let* voter_id = M.lift_result @@ Auth.validate_session auth ~access_token
+      |> M.on_error `Unauthorized in
+    let elections_json = Db.election_summaries_of_voter db voter_id in
+    M.ok @@ Dream.json ~status:`OK (Json.to_string elections_json)
+  
+  let get_election_details request = let open M.Syntax in
+    let* access_token = M.lift_option (parse_header_token request)
+      |> M.on_error `Unauthorized ~message:"Missing access token" in
+    let* voter_id = M.lift_result @@ Auth.validate_session auth ~access_token
+      |> M.on_error `Unauthorized in
+    let* election_id = M.lift_option @@ int_of_string_opt (Dream.param request "id")
+      |> M.on_error `Bad_Request ~message:"Wrong election ID format" in
+    let* () = M.guard (Db.election_exists db election_id)
+      |> M.on_error `Bad_Request ~message:"Election does not exist" in
+    let* () = M.guard (Db.can_vote db ~voter_id ~election_id)
+      |> M.on_error `Forbidden ~message:"The current voter does not take part in this election" in
+    let election = Db.get_election_by_id db election_id in
+    M.ok @@ Dream.json ~status:`OK (Json.to_string election)
+
   let create_session request = M.retract (create_session request)
   let refresh_session request = M.retract (refresh_session request)
   let delete_session request = M.retract (delete_session request)
   let whoami request = M.retract (whoami request)
+  let get_elections request = M.retract (get_elections request)
+  let get_election_details request = M.retract (get_election_details request)
 end
