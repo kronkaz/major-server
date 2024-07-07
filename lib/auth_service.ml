@@ -8,6 +8,7 @@ module type S = sig
 
   val create : unit -> auth
   val valid_credentials : auth -> credentials -> bool
+  val valid_admin_credentials : auth -> user:string -> password:string -> bool
   val create_session : auth -> voter_id:int -> string * string
   val validate_session : auth -> access_token:string -> (int, string) result
   val refresh_session : auth -> refresh_token:string -> (string * string, string) result
@@ -26,13 +27,16 @@ module Default : S = struct
     access_token_lifetime : int;
     refresh_token_lifetime : int;
     login : (int, string) Hashtbl.t;
-    sessions : (int, string * string) Hashtbl.t
+    sessions : (int, string * string) Hashtbl.t;
+    admin : string * string
   }
 
   let valid_credentials auth credentials =
     match Hashtbl.find_opt auth.login credentials.voter_id with
     | Some password when password = credentials.password -> true
     | _ -> false
+
+  let valid_admin_credentials auth ~user ~password = (user, password) = auth.admin
 
   let private_key = Jwk.make_oct "secret"
 
@@ -107,5 +111,6 @@ module Default : S = struct
     { access_token_lifetime = 60;
       refresh_token_lifetime = 300;
       login = test_login;
-      sessions = Hashtbl.create 7 }
+      sessions = Hashtbl.create 7;
+      admin = "admin", "1234" }
 end
