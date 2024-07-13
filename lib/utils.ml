@@ -1,12 +1,17 @@
-let option_traverse f l =
-  let rec traverse ys = function
-    | [] -> Some (List.rev ys)
-    | x :: xs ->
-      match f x with
+let option_sequence l =
+  let rec go xs = function
+    | [] -> Some (List.rev xs)
+    | opt :: opts ->
+      match opt with
       | None -> None
-      | Some y -> traverse (y :: ys) xs
+      | Some x -> go (x :: xs) opts
   in
-  traverse [] l
+  go [] l
+
+let option_liftM2 f a_opt b_opt = let (let*) = Option.bind in
+  let* a = a_opt in
+  let* b = b_opt in
+  Some (f a b)
 
 let array_find_indices p xs =
   Array.fold_left

@@ -2,6 +2,8 @@ module Json = Yojson.Basic
 module Db = Database_service
 
 module M = App_utils
+
+open Domain
   
 let get_header_token request = let (let*) = Option.bind in
   begin
@@ -24,9 +26,9 @@ module Make (Services : Services.S) = struct
   let auth = Auth.create ()
   let db = Db.create ()
 
-  (*   ┌───────────────────────────┐                                                              *)
-  (* ──┤ Authentication middleware ├───────────────────────────────────────────────────────────── *)
-  (*   └───────────────────────────┘                                                              *)
+(*   ┌───────────────────────────┐                                                                *)
+(* ──┤ Authentication middleware ├─────────────────────────────────────────────────────────────── *)
+(*   └───────────────────────────┘                                                                *)
 
   let voter_id_header_name = "X-Voter-ID"
 
@@ -63,9 +65,9 @@ module Make (Services : Services.S) = struct
     in
     M.ok @@ handler request
 
-  (*   ┌──────────────────┐                                                                       *)
-  (* ──┤ Session handling ├────────────────────────────────────────────────────────────────────── *)
-  (*   └──────────────────┘                                                                       *)
+(*   ┌──────────────────┐                                                                         *)
+(* ──┤ Session handling ├──────────────────────────────────────────────────────────────────────── *)
+(*   └──────────────────┘                                                                         *)
   
   let create_session request = let open M.Syntax in M.retract @@
     let* json = get_json_body request in
@@ -109,23 +111,27 @@ module Make (Services : Services.S) = struct
     in
     Dream.response ~status:`OK ""
 
-  (*   ┌───────────────┐                                                                          *)
-  (* ──┤ Introspection ├───────────────────────────────────────────────────────────────────────── *)
-  (*   └───────────────┘                                                                          *)
+(*   ┌───────────────┐                                                                            *)
+(* ──┤ Introspection ├─────────────────────────────────────────────────────────────────────────── *)
+(*   └───────────────┘                                                                            *)
 
   let whoami request = let open M.Syntax in M.retract @@
-    let+ name = Db.name_of_voter db (get_voter_id request)
+    let+ name = Db.name_of_voter db ~voter_id:(get_voter_id request)
       |> M.lift_option
       |> M.on_error `Internal_Server_Error ~message:"Voter not found"
     in
     Dream.response ~status:`OK (Json.to_string @@ `Assoc [("name", `String name)])
 
-  (*   ┌───────────────────────────────┐                                                          *)
-  (* ──┤ Domain-related user endpoints ├───────────────────────────────────────────────────────── *)
-  (*   └───────────────────────────────┘                                                          *)
+(*   ┌───────────────────────────────┐                                                            *)
+(* ──┤ Domain-related user endpoints ├─────────────────────────────────────────────────────────── *)
+(*   └───────────────────────────────┘                                                            *)
 
   let get_elections request = M.retract @@ M.return @@
-    let elections_json = Db.election_summaries_of_voter db (get_voter_id request) in
+    let elections_json =
+      Db.election_summaries_of_voter db ~voter_id:(get_voter_id request)
+      |> List.map Election_summary.to_json
+      |> fun l -> `List l
+    in
     Dream.response ~status:`OK (Json.to_string elections_json)
   
   let get_election_details request = let open M.Syntax in M.retract @@
@@ -133,40 +139,53 @@ module Make (Services : Services.S) = struct
       |> M.lift_option
       |> M.on_error `Bad_Request ~message:"Wrong election ID format"
     in
-    let* () = M.guard (Db.election_exists db election_id)
+    let* () = M.guard (Db.election_exists db ~election_id)
       |> M.on_error `Bad_Request ~message:"Election does not exist"
     in
     let+ () = M.guard (Db.can_vote db ~voter_id:(get_voter_id request) ~election_id)
       |> M.on_error `Forbidden ~message:"The current voter does not take part in this election"
     in
-    let election = Db.get_election_by_id db election_id in
+    let election = Election_info.to_json @@ Db.get_election db ~election_id in
     Dream.response ~status:`OK (Json.to_string election)
   
   let vote request = let open M.Syntax in M.retract @@
     let* election_id = M.lift_option @@ int_of_string_opt (Dream.param request "id")
       |> M.on_error `Bad_Request ~message:"Wrong election ID format"
     in
+    let* () = M.guard (Db.election_exists db ~election_id)
+      |> M.on_error `Bad_Request ~message:"Election does not exist"
+    in
+    let candidates = Db.candidates db ~election_id in
     let* json = get_json_body request in
-    let* ballot =
+    let* ballot, ballot_size =
       begin
         match json with
-        | `List l -> Utils.option_traverse (function `Int i -> Some i | _ -> None) l
+        | `List l ->
+          l
+          |> List.map (function
+               | `Assoc [("id", `Int cid); ("rating", `Int i)] -> let (let*) = Option.bind in
+                  let* rating = Rating.of_int_opt i in
+                  let* candidate =
+                    List.find_opt (fun Candidate.{ id; _ } -> id = cid) candidates
+                  in
+                  Some (candidate, rating)
+               | _ -> None
+             )
+          |> Utils.option_sequence
+          |> Option.map (fun l -> CandidateMap.of_list l, List.length l)
         | _ -> None
       end
       |> M.lift_option
       |> M.on_error `Bad_Request ~message:"JSON object does not have the expected shape"
     in
-    let voter_id = get_voter_id request in
-    let* () = M.guard (Db.election_exists db election_id)
-      |> M.on_error `Bad_Request ~message:"Election does not exist"
+    let* () = M.guard (ballot_size = List.length candidates)
+      |> M.on_error `Bad_Request ~message:"Incomplete ballot"
     in
+    let voter_id = get_voter_id request in
     let* () = M.guard (Db.can_vote db ~voter_id ~election_id)
       |> M.on_error `Forbidden ~message:"The current voter does not take part in this election"
     in
-    let* () = M.guard (Db.nb_voters db ~election_id = List.length ballot)
-      |> M.on_error `Bad_Request ~message:"Incomplete ballot"
-    in
-    let* () = M.guard (Db.election_is_running db election_id)
+    let* () = M.guard (Db.election_is_running db ~election_id)
       |> M.on_error `Forbidden ~message:"Election is no longer running"
     in
     let+ () = M.guard (not @@ Db.has_voted db ~voter_id ~election_id)
@@ -175,56 +194,83 @@ module Make (Services : Services.S) = struct
     Db.vote db ~election_id ~voter_id ~ballot;
     Dream.response ~status:`OK ""
 
+  (* compute a / b in percentage rounded to 0.01 *)
+  let ratio100 a b = let open Decimal in
+    of_int a / of_int b * of_int 100
+    |> round ~n:2
+    |> to_float
+
   let get_election_results request = let open M.Syntax in M.retract @@
     let* election_id = int_of_string_opt (Dream.param request "id")
       |> M.lift_option
       |> M.on_error `Bad_Request ~message:"Wrong election ID format"
     in
-    let* () = M.guard (Db.election_exists db election_id)
+    let* () = M.guard (Db.election_exists db ~election_id)
       |> M.on_error `Bad_Request ~message:"Election does not exist"
     in
-    let* () = M.guard (not @@ Db.election_is_running db election_id)
+    let* () = M.guard (not @@ Db.election_is_running db ~election_id)
       |> M.on_error `Forbidden ~message:"Election is still running"
     in
     let+ () = M.guard (Db.can_vote db ~voter_id:(get_voter_id request) ~election_id)
       |> M.on_error `Forbidden ~message:"The current voter does not take part in this election"
     in
-    let vote_counts = Db.vote_counts_of_election db election_id in
-    let nb_voters = Db.nb_voters db ~election_id in
-    let winner, explanation, participation, results =
-      Judgment.compute_results ~vote_counts ~nb_voters
+    let votes = Db.votes_of_election db ~election_id in
+    let votes_cast =
+      votes
+      |> CandidateMap.to_seq
+      |> Seq.uncons
+      |> Option.get
+      |> fst
+      |> snd
+      |> Array.fold_left (+) 0
     in
-    let results_json =
-      results
-      |> Array.map (fun (majority_rating, scores) -> `Assoc [
-        ("majority_rating", `Int majority_rating);
-        ("scores", `List (scores |> Array.map (fun s -> `Float s) |> Array.to_list))
-      ])
-      |> fun a -> `List (Array.to_list a)
+    let scores =
+      votes
+      |> CandidateMap.map (fun candidate_votes ->
+           Array.map (fun rating_count -> ratio100 rating_count votes_cast) candidate_votes)
+    in
+    let participation = ratio100 votes_cast (Db.nb_voters db ~election_id) in
+    let majority_ratings, winners = Judgment.majority_judgment ~votes in
+    let scores_and_ratings =
+      CandidateMap.merge
+        (fun _ scores_opt majority_rating_opt ->
+          Utils.option_liftM2 (fun x y -> (x, y)) scores_opt majority_rating_opt)
+        scores
+        majority_ratings
     in
     let response_body = Json.to_string @@ `Assoc [
-      ("winner", `Int winner);
-      ("explanation", `String (Judgment.Explanation.to_string explanation));
+      ("winners", `List (List.map (fun Candidate.{ id; _ } -> `Int id) winners));
       ("participation", `Float participation);
-      ("results", results_json)
+      ("results",
+        scores_and_ratings
+        |> CandidateMap.to_list
+        |> List.map (fun (Candidate.{ id; _ }, (scores, majority_rating)) -> `Assoc [
+             ("id", `Int id);
+             ("majority_rating",
+               Option.fold majority_rating
+                 ~none:`Null
+                 ~some:(fun rating -> `Int (Rating.to_int rating)));
+             ("scores", `List (scores |> Array.map (fun s -> `Float s) |> Array.to_list))
+           ])
+        |> fun l -> `List l)
     ] in
     Dream.response ~status:`OK response_body
 
-  (*   ┌──────────────────────────┐                                                               *)
-  (* ──┤ Administration endpoints ├────────────────────────────────────────────────────────────── *)
-  (*   └──────────────────────────┘                                                               *)
+(*   ┌──────────────────────────┐                                                                 *)
+(* ──┤ Administration endpoints ├──────────────────────────────────────────────────────────────── *)
+(*   └──────────────────────────┘                                                                 *)
 
   let terminate_election request = let open M.Syntax in M.retract @@
     let* election_id = int_of_string_opt (Dream.param request "id")
       |> M.lift_option
       |> M.on_error `Bad_Request ~message:"Wrong election ID format"
     in
-    let* () = M.guard (Db.election_exists db election_id)
+    let* () = M.guard (Db.election_exists db ~election_id)
       |> M.on_error `Bad_Request ~message:"Election does not exist"
     in
-    let+ () = M.guard (Db.election_is_running db election_id)
+    let+ () = M.guard (Db.election_is_running db ~election_id)
       |> M.on_error `Not_Acceptable ~message:"Election is not running"
     in
-    Db.terminate_election db election_id;
+    Db.terminate_election db ~election_id;
     Dream.response ~status:`OK ""
 end
