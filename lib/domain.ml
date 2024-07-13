@@ -56,5 +56,5 @@ module Rating = struct
   let to_int (Rating i) = i
   let of_int_opt i = if i >= 0 && i < 7 then Some (Rating i) else None
 
-  let compare (Rating i) (Rating i') = compare i i'
+  let max (Rating i) (Rating i') = Rating (max i i')
 end

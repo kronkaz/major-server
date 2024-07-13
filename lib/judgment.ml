@@ -1,5 +1,10 @@
 open Domain
 
+(* ┌── Warning ─────────────────────────────────────────────────────────────────────────────────┐ *)
+(* │ Functions in this module expect arrays to list rating counts in increasing order, i.e.,    │ *)
+(* │ from the worst rating to the best rating. We also assume there are exactly 7 ratings.      │ *)
+(* └────────────────────────────────────────────────────────────────────────────────────────────┘ *)
+
 (* strictly more than half of voters consider a candidate deserves at least their majority rating *)
 let majority_rating ~candidate_votes =
   let total_votes = Array.fold_left (+) 0 candidate_votes in
@@ -19,35 +24,41 @@ let majority_rating ~candidate_votes =
 (* finite sequence of repeated majority rating computations,
    where we remove the median vote every time until no votes are left *)
 let majority_sequence ~candidate_votes =
-  let candidate_votes = Array.copy candidate_votes in
-  let majority_rating_removing_vote rating =
-    let i = Rating.to_int rating in
-    candidate_votes.(i) <- candidate_votes.(i) - 1;
-    Option.bind (majority_rating ~candidate_votes) @@ fun r -> Some (r, Some r)
-  in
-  majority_rating ~candidate_votes
-  |> Seq.unfold @@ fun rating -> Option.bind rating majority_rating_removing_vote
+  (majority_rating ~candidate_votes, candidate_votes)
+  |> Seq.unfold @@ fun (rating_opt, candidate_votes) -> let (let*) = Option.bind in
+       let* rating = rating_opt in
+       let i = Rating.to_int rating in
+       (* the array is only used as an internal state for computing the ratings, but we still copy
+          it at every step to avoid weird bugs due to the interaction between mutability and the
+          laziness of sequences (on purpose, because we don't want to compute the whole sequence
+          if it is not needed)
+          anyway, the arrays are 7-cells long, and the more voters, the less perfect equalities,
+          so it is not a big deal *)
+       let candidate_votes = Array.copy candidate_votes in
+       candidate_votes.(i) <- candidate_votes.(i) - 1;
+       Some (rating, (majority_rating ~candidate_votes, candidate_votes))
 
 let majority_judgment ~votes =
   let rec find_winners indexed_majority_sequences =
-    if Seq.is_empty @@ snd (List.hd indexed_majority_sequences) then begin
-      (* had to reach the last vote and could not break the tie -> several winners *)
+    if List.length indexed_majority_sequences = 1 ||
+       Seq.is_empty (snd @@ List.hd indexed_majority_sequences)
+    then
+      (* only one winner left, or had to reach the last vote and could not break the tie *)
       List.map fst indexed_majority_sequences
-    end else
+    else begin
       (* expose the next majority rating in the sequences *)
       let majority_ratings_and_sequences =
         indexed_majority_sequences
         |> List.map (fun (candidate, majority_seq) ->
-            let (majority_rating, majority_seq') = Option.get @@ Seq.uncons majority_seq in
-            (candidate, majority_rating, majority_seq')
-           )
+             let (majority_rating, majority_seq') = Option.get @@ Seq.uncons majority_seq in
+             (candidate, majority_rating, majority_seq'))
       in
       (* find the best one and remove all sequences who do not have it *)
       let best_majority_rating =
         majority_ratings_and_sequences
-        |> List.sort (fun (_, rating, _) (_, rating', _) -> Rating.compare rating' rating)
-        |> List.hd
-        |> fun (_, rating, _) -> rating
+        |> List.fold_left
+             (fun best_rating (_, rating, _) -> Rating.max best_rating rating)
+             (Option.get @@ Rating.of_int_opt 0)
       in
       let majority_sequences' =
         majority_ratings_and_sequences
@@ -56,6 +67,7 @@ let majority_judgment ~votes =
       in
       (* loop with the remaining sequences *)
       find_winners majority_sequences'
+    end
   in
   let majority_ratings =
     CandidateMap.map (fun candidate_votes -> majority_rating ~candidate_votes) votes

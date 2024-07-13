@@ -1,4 +1,4 @@
 (executable
  (public_name test)
  (name test)
- (libraries major))
+ (libraries major ounit2))
