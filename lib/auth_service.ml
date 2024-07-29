@@ -7,6 +7,7 @@ module type S = sig
   }
 
   val create : unit -> auth
+  val create_user : auth -> password:string -> int
   val valid_credentials : auth -> credentials -> bool
   val valid_admin_credentials : auth -> user:string -> password:string -> bool
   val create_session : auth -> voter_id:int -> string * string
@@ -26,10 +27,17 @@ module Default : S = struct
   type auth = {
     access_token_lifetime : int;
     refresh_token_lifetime : int;
+    mutable id_counter : int;
     login : (int, string) Hashtbl.t;
     sessions : (int, string * string) Hashtbl.t;
     admin : string * string
   }
+  
+  let create_user auth ~password =
+    let id = auth.id_counter in
+    Hashtbl.add auth.login id password;
+    auth.id_counter <- auth.id_counter + 1;
+    id
 
   let valid_credentials auth credentials =
     match Hashtbl.find_opt auth.login credentials.voter_id with
@@ -110,6 +118,7 @@ module Default : S = struct
     let test_login = Hashtbl.of_seq @@ List.to_seq [(0, "0000"); (1, "1111"); (2, "2222")] in
     { access_token_lifetime = 60;
       refresh_token_lifetime = 300;
+      id_counter = 0;
       login = test_login;
       sessions = Hashtbl.create 7;
       admin = "admin", "1234" }

@@ -4,6 +4,8 @@ module Db = Database_service
 module M = App_utils
 
 open Domain
+
+module IntMap = Utils.IntMap
   
 let get_header_token request = let (let*) = Option.bind in
   begin
@@ -68,6 +70,33 @@ module Make (Services : Services.S) = struct
 (*   ┌──────────────────┐                                                                         *)
 (* ──┤ Session handling ├──────────────────────────────────────────────────────────────────────── *)
 (*   └──────────────────┘                                                                         *)
+
+  let create_user request = let open M.Syntax in M.retract @@
+    let* json = get_json_body request in
+    let* username, password =
+      begin let (let*) = Option.bind in
+        let* l = Utils.object_of_json_opt json in
+        let* n = List.assoc_opt "username" l in
+        let* p = List.assoc_opt "password" l in
+        let* name = Utils.string_of_json_opt n in
+        let* password = Utils.string_of_json_opt p in
+        Some (name, password)
+      end
+      |> M.lift_option
+      |> M.on_error `Bad_Request ~message:"JSON object does not have the expected shape"
+    in
+    let* () = M.guard (String.length username > 0)
+      |> M.on_error `Bad_Request ~message:"Empty username"
+    in
+    let* () = M.guard (not (Db.username_exists db ~username))
+      |> M.on_error `Not_Acceptable ~message:"This username is already taken"
+    in
+    let+ () = M.guard (String.length password >= 8)
+      |> M.on_error `Bad_Request ~message:"Password must contain at least 8 characters"
+    in
+    let voter_id = Auth.create_user auth ~password in
+    Db.add_user_info db ~voter_id UserInfo.{ name = username };
+    Dream.response ~status:`OK (Json.to_string @@ `Assoc [("id", `Int voter_id)])
   
   let create_session request = let open M.Syntax in M.retract @@
     let* json = get_json_body request in
@@ -116,7 +145,7 @@ module Make (Services : Services.S) = struct
 (*   └───────────────┘                                                                            *)
 
   let whoami request = let open M.Syntax in M.retract @@
-    let+ name = Db.name_of_voter db ~voter_id:(get_voter_id request)
+    let+ { name } = Db.get_user_info db ~voter_id:(get_voter_id request)
       |> M.lift_option
       |> M.on_error `Internal_Server_Error ~message:"Voter not found"
     in
@@ -259,6 +288,37 @@ module Make (Services : Services.S) = struct
 (*   ┌──────────────────────────┐                                                                 *)
 (* ──┤ Administration endpoints ├──────────────────────────────────────────────────────────────── *)
 (*   └──────────────────────────┘                                                                 *)
+
+  let get_users _ = M.retract @@ M.return @@
+    begin
+      Db.get_all_user_info db
+      |> IntMap.bindings
+      |> List.map (fun (voter_id, UserInfo.{ name }) ->
+          `Assoc [("id", `Int voter_id); ("name", `String name)])
+      |> fun l -> Json.to_string (`List l)
+      |> Dream.response ~status:`OK
+    end
+
+  let create_election request = let open M.Syntax in M.retract @@
+    let* json = get_json_body request in
+    let* election = Election.of_json_opt json
+      |> M.lift_option
+      |> M.on_error `Bad_Request ~message:"Election info is ill formed"
+    in
+    let* () = M.guard (String.length election.name > 0)
+      |> M.on_error `Bad_Request ~message:"Empty election name"
+    in
+    let* () = M.guard (List.length election.candidates > 0)
+      |> M.on_error `Bad_Request ~message:"No candidates given"
+    in
+    let+ () = M.guard (List.length election.voters > 0)
+      |> M.on_error `Bad_Request ~message:"No voters given"
+    in
+    let election =
+      { election with candidates =
+          election.candidates
+          |> List.mapi (fun i candidate -> Candidate.{ candidate with id = i }) } in
+    Dream.response ~status:`OK @@ Json.to_string @@ `Int (Db.add_election db election)
 
   let terminate_election request = let open M.Syntax in M.retract @@
     let* election_id = int_of_string_opt (Dream.param request "id")

@@ -7,6 +7,7 @@ module type S = sig
   }
 
   val create : unit -> auth
+  val create_user : auth -> password:string -> int
   val valid_credentials : auth -> credentials -> bool
   val valid_admin_credentials : auth -> user:string -> password:string -> bool
   val create_session : auth -> voter_id:int -> string * string

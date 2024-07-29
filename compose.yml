@@ -1,0 +1,6 @@
+services:
+  major:
+    build: .
+    ports:
+      - "8000:8000"
+    command: --test --port 8000

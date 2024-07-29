@@ -1,0 +1,741 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Scalar API Reference</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <!-- Need a Custom Header? Check out this example https://codepen.io/scalarorg/pen/VwOXqam -->
+<script id="api-reference" type="application/yaml">
+openapi: 3.1.0
+info:
+  title: Major API
+  version: 1.3
+  description: >-
+    [Major](https://github.com/kronkaz/major-server) is an implementation of the
+    [majority judgment](https://en.wikipedia.org/wiki/Majority_judgment) voting system, as a side
+    project, along with a mobile application, and possibly deployed on the web.
+
+    This page documents the API to be used on the client side to interact with the voting server.
+servers:
+  - url: http://api.example.com/v1
+    description: Optional server description, e.g. Main (production) server
+  - url: http://staging-api.example.com/v1
+    description: Optional server description, e.g. Internal staging server for testing
+tags:
+  - name: Authentication
+    description: Endpoints used to authenticate users into the system and manage sessions
+  - name: User
+    description: Endpoints used to interact with the voting system as a user
+  - name: Admin
+    description: Endpoints used by the administrator to setup the voting system
+components:
+  schemas:
+    access_token:
+      type: string
+      format: jwt
+      pattern: 'Bearer <access token>'
+      required: true
+      example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiTmljb2xhcyBTYXJrb3p5Iiwicm9sZSI6IidUZW1wcyBkZXMgdGVtcMOqdGVzJyByZWFkZXIifQ.A40bhNArellx-wggZH-WNdWw172Sq7COTqW-hyVv5eM
+    refresh_token:
+      type: string
+      format: jwt
+      pattern: 'Bearer <refresh token>'
+      required: true
+      example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiTmljb2xhcyBTYXJrb3p5Iiwicm9sZSI6IidUZW1wcyBkZXMgdGVtcMOqdGVzJyByZWFkZXIifQ.A40bhNArellx-wggZH-WNdWw172Sq7COTqW-hyVv5eM
+    error_message:
+      type: string
+      example: Error message
+paths:
+  /session:
+    get:
+      tags:
+        - Authentication
+      summary: Create session
+      description: >-
+        The voter enters their ID and password to get into the system.
+        The server answers with an _access token_ that has to be included in all the following
+        calls to the API, as a [_bearer_ authentication header](https://datatracker.ietf.org/doc/html/rfc6750).
+
+
+        The access token is a [_JWT token_](https://jwt.io) containing the voter ID and the expiry
+        date of the token.
+        It is signed and encrypted by the server, so it is useless on the client side.
+        Nevertheless, the client can call `/whoami` with the token in the headers to obtain
+        the voter information.
+
+
+        The response also includes a _refresh token_, that is meant to be used in case the client
+        wants to remain connected for longer than allowed by the expiry date.
+        In this case, the client must call this endpoint, either with the `GET` method requiring
+        credentials, or the `PATCH` method only requiring the refresh token.
+        This was designed so that credentials do not need to be stored in client applications.
+      requestBody:
+        required: true
+        description: User credentials
+        content:
+          application/json:
+            schema:
+              type: object
+              required: true
+              properties:
+                voter_id:
+                  type: integer
+                  format: unsigned
+                  example: 1452
+                  required: true
+                password:
+                  type: string
+                  example: "azerty"
+                  required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: true
+                properties:
+                  access_token:
+                    type: string
+                    format: jwt
+                    required: true
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiTWF4aW11cyBEZWNpbXVzIE1lcmlkaXVzIiwicm9sZSI6ImdsYWRpYXRvciJ9.EeL-KwqBSUAl82ONvPD8JwDTFjHxhaN3U02Q3PwxprM
+                  refresh_token:
+                    type: string
+                    format: jwt
+                    required: true
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiWGF2aWVyIEJlcnRyYW5kIiwicm9sZSI6InNlbmlvciBvcHBvcnR1bmlzdCJ9.btvXz9b39ruKIk9ARcW1jO8hFH7iQ5XxekK353u2HVg
+        '400':
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+    delete:
+      tags:
+        - Authentication
+      summary: Delete session
+      description: >-
+        This endpoint must be used when the client wants to log out from the voting system.
+        This makes sure the tokens used in the session are now invalid.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema:
+            $ref: '#/components/schemas/access_token'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/tokens'
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+  /session/refresh:
+    patch:
+      tags:
+        - Authentication
+      summary: Refresh session
+      description: >-
+        This endpoint extends a session by re-generating fresh tokens for the voter identified by
+        the token given in the header.
+        Note that this endpoint uses the _refresh token_ instead of the access token.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema:
+            $ref: '#/components/schemas/refresh_token'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/tokens'
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+  /whoami:
+    get:
+      tags:
+        - Authentication
+      summary: Get current user information
+      description: >-
+        This endpoint can be used by the client to know more about the current voter logged in.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema:
+            $ref: '#/components/schemas/access_token'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  voter_name:
+                    type: string
+                    example: Jean Dupont
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '500':
+          description: Internal Server Error
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+  /elections:
+    get:
+      tags:
+        - User
+      summary: Get accessible elections
+      description: >-
+        Through this endpoint, the voter can read which elections they can (or could) vote for,
+        that are still in the system.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema:
+            $ref: '#/components/schemas/access_token'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                required: true
+                items:
+                  type: object
+                  required: true
+                  properties:
+                    id:
+                      type: integer
+                      required: true
+                      example: 354
+                    name:
+                      type: string
+                      required: true
+                      example: Galactic General Elections 3084
+                    is_running:
+                      type: boolean
+                      required: true
+                      example: true
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+    post:
+      tags:
+        - Admin
+      summary: Create election
+      description: This endpoint is used by the administrator to create a new election.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema:
+            type: string
+            format: basic
+            pattern: 'Basic <base64(user:password)>'
+            required: true
+            example: Basic dHJ1bXA6bWFnYQ==
+      requestBody:
+        required: true
+        description: Election data
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: Best Sauce
+                  required: true
+                candidates:
+                  type: array
+                  required: true
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        required: true
+                      party:
+                        type: string
+                        required: true
+                      colour:
+                        type: string
+                        required: true
+                  example:
+                    [{name: Mayo, party: Egg, colour: "#FFFD9E"},
+                     {name: Ketchup, party: Tomato, colour: "#A61F07"}]
+                voters:
+                  type: array
+                  required: true
+                  items:
+                    type: integer
+                  example: [4, 7, 15, 17, 20, 39, 733]
+      responses:
+        '200':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    required: true
+                    example: 57
+        '400':
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        # POST /elections {name;candidates=[{name;party;colour}];voters=[int]} ~> 200{id: int} / 400 / 401
+  /elections/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        description: Election identifier
+        schema:
+          type: integer
+          example: 57
+    get:
+      tags:
+        - User
+      summary: Get information about an election
+      description: >-
+        This endpoint is used to get more information about the various candidates running for an
+        election and which party they belong to.
+        By making this call, the client knows the positions of the candidates and is able to create
+        a ballot.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema:
+            $ref: '#/components/schemas/access_token'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: true
+                properties:
+                  id:
+                    type: integer
+                    required: true
+                    example: 12
+                  name:
+                    type: string
+                    required: true
+                    example: Election 9
+                  is_running:
+                    type: boolean
+                    required: true
+                    example: false
+                  candidates:
+                    type: array
+                    required: true
+                    items:
+                      type: object
+                      required: true
+                      properties:
+                        id:
+                          type: integer
+                          required: true
+                          example: 7
+                        name:
+                          type: string
+                          required: true
+                          example: Umi
+                        party:
+                          type: string
+                          required: true
+                          example: The Golden Retriever Party
+                        colour:
+                          type: string
+                          required: true
+                          format: hexadecimal colour
+                          example: '#345678'
+        '400':
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '403':
+          description: Forbidden
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+    post:
+      tags:
+        - User
+      summary: Vote in an election
+      description: >-
+        In a _majority judgment_ voting system, instead of choosing _one_ candidate, the voter
+        gives a _rating_ to _every_ candidate present in the election.
+        In our system, the ratings go from `1` to `7` (higher is better) and have the following
+        names :
+
+          1. Terrible
+          2. Bad
+          3. Inadequate
+          4. Passable
+          5. Sufficient
+          6. Good
+          7. Excellent
+
+        This allows the voter to give a more complex opinion that will be taken into account in the
+        voting system.
+        Please note that a valid ballot must contain a rating for _every_ candidate.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema:
+            $ref: '#/components/schemas/access_token'
+      requestBody:
+        required: true
+        description: Ballot
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                    required: true
+                    description: Candidate identifier
+                  rating:
+                    type: integer
+                    minimum: 1
+                    maximum: 7
+                    required: true
+                    example: 2
+                    description: Rating for the candidate
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '403':
+          description: Forbidden
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+    patch:
+      tags:
+        - Admin
+      summary: Terminate an election
+      description: This endpoint puts an end to a running election.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema:
+            type: string
+            format: basic
+            pattern: 'Basic <base64(user:password)>'
+            required: true
+            example: Basic dHJ1bXA6bWFnYQ==
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '406':
+          description: Not Acceptable
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+  /elections/{id}/results:
+    get:
+      tags:
+        - User
+      summary: Get results of an election
+      description: >-
+        At the end of the voting period, each candidate gets their _profile_ computed, _i.e._, the
+        list of proportions of voters that gave them each rating.
+        The winner is determined by computing the _majority ratings_.
+        
+
+        The _majority rating_ of a candidate is the _highest_ rating for which
+        _strictly more than half_ of the voters gave them _at least_ this rating.
+        In other words, if we were to sort ratings in _increasing_ order, the majority rating would
+        be the rating in the _middle_, _i.e._, rating number `k` if there are `2k` ratings, or
+        rating number `k + 1` if there are `2k + 1` ratings.
+        The winner is the candidate with the highest majority rating.
+
+
+        The response of this endpoint includes both the majority ratings and the scores for each
+        rating in _increasing_ order, for each candidate.
+
+
+        ### Note
+
+        In case of a tie, a more complex tie-breaking computation is carried
+        out by the server.
+        In fact, the Major system implements the original tie-breaking strategy proposed by the
+        creators of majority judgment, Balinski & Laraki, described in an
+        [article by Adrien Fabre (line 189)](https://shs.hal.science/halshs-04363059/file/Tie-breaking%20Highest%20Median.pdf).
+
+
+        When there is a tie on a majority rating, we exclude all the candidates who did not get this
+        rating.
+        Then, we remove the median vote of the remaining winners, _i.e._, the first vote justifying
+        that they got this majority rating.
+        It means that the winner will now be decided on one less ballot than the first round.
+
+
+        We loop this process until no ballot is available anymore.
+        If there is still a tie, it means all the remaining candidates have the exact rating
+        distribution, which, if the election has a big enough amount of voters, is highly unlikely.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema:
+            $ref: '#/components/schemas/access_token'
+        - in: path
+          name: id
+          required: true
+          description: Election identifier
+          schema:
+            type: integer
+            example: 57
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: true
+                properties:
+                  winners:
+                    type: array
+                    required: true
+                    items:
+                      type: integer
+                      required: true
+                      example: 4
+                  participation:
+                    type: float
+                    required: true
+                    example: 75.50
+                  results:
+                    type: array
+                    required: true
+                    items:
+                      type: object
+                      required: true
+                      properties:
+                        id:
+                          type: integer
+                          required: true
+                          example: 4
+                        majority_rating:
+                          type: integer
+                          minimum: 1
+                          maximum: 7
+                          example: 2
+                          required: true
+                        scores:
+                          type: array
+                          required: true
+                          items:
+                            type: float
+                            required: true
+                          example: [24.00, 13.00, 17.50, 16.50, 15.00, 10.75, 3.25]
+        '400':
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '403':
+          description: Forbidden
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+  /user:
+    post:
+      tags:
+        - User
+      summary: Add user
+      description: >-
+        This endpoint is used to add a new voter to the system. Note that this endpoint can be used
+        without any authentication token, for instance by a user joining the system for the first
+        time.
+      requestBody:
+        required: true
+        description: Name and password
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  example: Hyyu van de Bordier
+                  required: true
+                  description: Name (or nickname) of the new user
+                password:
+                  type: string
+                  example: jaimeLeComte24
+                  required: true
+                  minLength: 8
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 12
+                    required: true
+        '400':
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+        '406':
+          description: Not Acceptable
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+  /users:
+    get:
+      tags:
+        - Admin
+      summary: Get users
+      description: >-
+        This endpoint is used by the administrator to get the identifiers and information of all the
+        voters the system, in order to choose which ones to include in an election to come.
+      parameters:
+        - in: header
+          name: Authorization
+          required: true
+          schema:
+            type: string
+            format: basic
+            pattern: 'Basic <base64(user:password)>'
+            required: true
+            example: Basic dHJ1bXA6bWFnYQ==
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                required: true
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      required: true
+                    name:
+                      type: string
+                      required: true
+                example: [{id: 3, name: Dupond}, {id: 4, name: Dupont}]
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/error_message'
+      </script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>

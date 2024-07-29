@@ -1,3 +1,5 @@
+module IntMap = Map.Make(Int)
+
 let option_sequence l =
   let rec go xs = function
     | [] -> Some (List.rev xs)
@@ -19,3 +21,8 @@ let array_find_indices p xs =
     (0, []) xs
   |> snd
   |> List.rev
+
+let int_of_json_opt = function `Int i -> Some i | _ -> None
+let string_of_json_opt = function `String s -> Some s | _ -> None
+let list_of_json_opt = function `List s -> Some s | _ -> None
+let object_of_json_opt = function `Assoc l -> Some l | _ -> None

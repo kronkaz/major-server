@@ -275,10 +275,3 @@ let () = List.iter run_test_tt_main [
   test_suite_majority_sequence;
   test_suite_majority_judgment
 ]
-
-(* let () =
-  let module App = App.Make(struct
-    module Auth = Auth_service.Default
-    module Db = Database_service.Default
-  end) in
-  App.start () *)
