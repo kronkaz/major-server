@@ -7,13 +7,17 @@ end
 module Election_summary = struct
   type t = {
     id : int;
+    kind : string;
     name : string;
+    date : string;
     is_running : bool;
   }
 
-  let to_json { id; name; is_running } = `Assoc [
+  let to_json { id; kind; name; date; is_running } = `Assoc [
     ("id", `Int id);
+    ("kind", `String kind);
     ("name", `String name);
+    ("date", `String date);
     ("is_running", `Bool is_running)
   ]
 end
@@ -53,14 +57,18 @@ end)
 module Election_info = struct
   type t = {
     id : int;
+    kind : string;
     name : string;
+    date : string;
     is_running : bool;
     candidates : Candidate.t list
   }
 
-  let to_json { id; name; is_running; candidates } = `Assoc [
+  let to_json { id; kind; name; date; is_running; candidates } = `Assoc [
     ("id", `Int id);
+    ("kind", `String kind);
     ("name", `String name);
+    ("date", `String date);
     ("is_running", `Bool is_running);
     ("candidates", `List (List.map Candidate.to_json candidates))
   ]
@@ -68,22 +76,28 @@ end
 
 module Election = struct
   type t = {
+    kind : string;
     name : string;
+    date : string;
     candidates : Candidate.t list;
     voters : int list
   }
 
   let of_json_opt json = let (let*) = Option.bind in
     let* l = Utils.object_of_json_opt json in
+    let* k = List.assoc_opt "kind" l in
     let* n = List.assoc_opt "name" l in
+    let* d = List.assoc_opt "date" l in
     let* cs = List.assoc_opt "candidates" l in
     let* cs' = Utils.list_of_json_opt cs in
     let* vs = List.assoc_opt "voters" l in
     let* vs' = Utils.list_of_json_opt vs in
+    let* kind = Utils.string_of_json_opt k in
     let* name = Utils.string_of_json_opt n in
+    let* date = Utils.string_of_json_opt d in
     let* candidates = List.map Candidate.of_json_opt cs' |> Utils.option_sequence in
     let* voters = List.map Utils.int_of_json_opt vs' |> Utils.option_sequence in
-    Some { name; candidates; voters }
+    Some { kind; name; date; candidates; voters }
 end
 
 module Rating = struct

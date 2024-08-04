@@ -242,10 +242,18 @@ paths:
                       type: integer
                       required: true
                       example: 354
+                    kind:
+                      type: string
+                      required: true
+                      example: General Elections
                     name:
                       type: string
                       required: true
-                      example: Galactic General Elections 3084
+                      example: Milky Way
+                    date:
+                      type: string
+                      required: true
+                      example: '3084'
                     is_running:
                       type: boolean
                       required: true
@@ -279,10 +287,18 @@ paths:
             schema:
               type: object
               properties:
+                kind:
+                  type: string
+                  required: true
+                  example: Poll
                 name:
                   type: string
-                  example: Best Sauce
                   required: true
+                  example: 'Best Sauce'
+                date:
+                  type: string
+                  required: true
+                  example: '2k24'
                 candidates:
                   type: array
                   required: true
@@ -331,7 +347,6 @@ paths:
             text/plain:
               schema:
                 $ref: '#/components/schemas/error_message'
-        # POST /elections {name;candidates=[{name;party;colour}];voters=[int]} ~> 200{id: int} / 400 / 401
   /elections/{id}:
     parameters:
       - in: path
@@ -369,10 +384,18 @@ paths:
                     type: integer
                     required: true
                     example: 12
+                  kind:
+                    type: string
+                    required: true
+                    example: Poll
                   name:
                     type: string
                     required: true
-                    example: Election 9
+                    example: Best Animal
+                  date:
+                    type: string
+                    required: true
+                    example: '2023'
                   is_running:
                     type: boolean
                     required: true

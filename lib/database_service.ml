@@ -31,7 +31,9 @@ module IntSet = Set.Make(Int)
 module Default : S = struct
   type election = {
     id : int;
+    kind : string;
     name : string;
+    date : string;
     mutable is_running : bool;
     candidates : Candidate.t list;
     voters : int list;
@@ -39,11 +41,11 @@ module Default : S = struct
     votes : int array CandidateMap.t
   }
 
-  let election_to_summary { id; name; is_running; _ } =
-    Domain.Election_summary.({ id; name; is_running })
+  let election_to_summary { id; kind; name; date; is_running; _ } =
+    Domain.Election_summary.({ id; kind; name; date; is_running })
 
-  let election_to_election_info { id; name; is_running; candidates; _ } =
-    Domain.Election_info.{ id; name; is_running; candidates }
+  let election_to_election_info { id; kind; name; date; is_running; candidates; _ } =
+    Domain.Election_info.{ id; kind; name; date; is_running; candidates }
 
   type db = {
     user_data : (int, UserInfo.t) Hashtbl.t;
@@ -106,11 +108,13 @@ module Default : S = struct
     List.find (fun election -> election.id = election_id) db.election_data
     |> fun election -> IntSet.mem voter_id election.have_voted
 
-  let add_election db Election.{ name; candidates; voters } =
+  let add_election db Election.{ kind; name; date; candidates; voters } =
     let id = db.id_counter in
     let election = {
       id;
+      kind;
       name;
+      date;
       is_running = true;
       candidates;
       voters;
@@ -146,7 +150,9 @@ module Default : S = struct
     let candidate2 = Candidate.{ id = 1; name = "Bob"; party = "The Blue"; colour = "#0000FF" } in
     let election_data = [
       { id = 1;
-        name = "Election 1";
+        kind = "Presidentials";
+        name = "USA";
+        date = "3024";
         is_running = true;
         candidates = candidates1;
         voters = [0 ; 1];
@@ -156,7 +162,9 @@ module Default : S = struct
           |> List.map (fun candidate -> candidate, Array.make 7 0)
           |> CandidateMap.of_list };
       { id = 2;
-        name = "Election 2";
+        kind = "General Elections";
+        name = "UK";
+        date = "3024";
         is_running = false;
         candidates = [candidate2];
         voters = [2];
