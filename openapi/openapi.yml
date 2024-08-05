@@ -44,7 +44,7 @@ paths:
         - Authentication
       summary: Create session
       description: >-
-        The voter enters their ID and password to get into the system.
+        The voter enters their username and password to get into the system.
         The server answers with an _access token_ that has to be included in all the following
         calls to the API, as a [_bearer_ authentication header](https://datatracker.ietf.org/doc/html/rfc6750).
 
@@ -70,14 +70,13 @@ paths:
               type: object
               required: true
               properties:
-                voter_id:
-                  type: integer
-                  format: unsigned
-                  example: 1452
+                username:
+                  type: string
+                  example: user67
                   required: true
                 password:
                   type: string
-                  example: "azerty"
+                  example: azerty
                   required: true
       responses:
         '200':
@@ -185,7 +184,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  voter_name:
+                  username:
+                    type: string
+                    example: jdupont01
+                  name:
                     type: string
                     example: Jean Dupont
         '401':
@@ -672,14 +674,25 @@ paths:
               properties:
                 username:
                   type: string
+                  format: non-space printable ascii
+                  minLength: 1
+                  maxLength: 32
+                  example: hyyu
+                  required: true
+                  description: Login or nickname of the new user
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
                   example: Hyyu van de Bordier
                   required: true
-                  description: Name (or nickname) of the new user
+                  description: Name of the new user
                 password:
                   type: string
+                  minLength: 8
+                  maxLength: 64
                   example: jaimeLeComte24
                   required: true
-                  minLength: 8
       responses:
         '200':
           description: OK
@@ -739,7 +752,9 @@ paths:
                     name:
                       type: string
                       required: true
-                example: [{id: 3, name: Dupond}, {id: 4, name: Dupont}]
+                example:
+                  [ {id: 3, username: dupond33, name: Dupond},
+                    {id: 4, username: dupont44, name: Dupont} ]
         '401':
           description: Unauthorized
           content:

@@ -1,5 +1,6 @@
 module UserInfo = struct
   type t = {
+    user : string;
     name : string
   }
 end

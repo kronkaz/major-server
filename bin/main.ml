@@ -16,12 +16,18 @@ let parse_args () =
     failwith (Printf.sprintf "invalid port: %d" !port);
   (!test, !port)
 
+let parse_admin_credentials () =
+  match Sys.getenv_opt "ADMIN_USER", Sys.getenv_opt "ADMIN_PASSWORD" with
+  | Some user, Some password -> (user, password)
+  | _ -> failwith "expected admin user and password as environment variables"
+
 let () =
   let test, port = parse_args () in
+  let admin_credentials = parse_admin_credentials () in
   if test then
     let module App = App.Make(struct
-      module Auth = Auth_service.Default
-      module Db = Database_service.Default
+      module Auth = Auth_service.Default(struct let admin_credentials = admin_credentials end)
+      module Db = Database_service.Default(struct let admin_username = fst admin_credentials end)
     end) in
     App.start { port }
   else

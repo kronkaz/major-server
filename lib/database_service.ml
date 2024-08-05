@@ -28,7 +28,9 @@ end
 
 module IntSet = Set.Make(Int)
 
-module Default : S = struct
+module Default (Config : sig
+  val admin_username : string
+end) = struct
   type election = {
     id : int;
     kind : string;
@@ -58,7 +60,7 @@ module Default : S = struct
   let username_exists db ~username =
     db.user_data
     |> Hashtbl.to_seq_values
-    |> Seq.exists (fun UserInfo.{ name } -> name = username)
+    |> Seq.exists (fun UserInfo.{ user; _ } -> user = username)
   
   let get_user_info db ~voter_id = Hashtbl.find_opt db.user_data voter_id
 
@@ -138,38 +140,7 @@ module Default : S = struct
 
   let create () =
     let user_data = Hashtbl.of_seq @@ List.to_seq UserInfo.[
-      (0, { name = "Jean Dupont" });
-      (1, { name = "John Smith" });
-      (2, { name = "Giuseppe Ragazzo" })
+      (0, { user = Config.admin_username; name = "Administrator" })
     ] in
-    let candidates1 = Candidate.[
-      { id = 1; name = "Bob"; party = "The Blue"; colour = "#0000FF" };
-      { id = 2; name = "Ronald"; party = "The Red"; colour = "#FF0000" };
-      { id = 3; name = "Gabriel"; party = "The Green"; colour = "#00FF00" }
-    ] in
-    let candidate2 = Candidate.{ id = 1; name = "Bob"; party = "The Blue"; colour = "#0000FF" } in
-    let election_data = [
-      { id = 1;
-        kind = "Presidentials";
-        name = "USA";
-        date = "3024";
-        is_running = true;
-        candidates = candidates1;
-        voters = [0 ; 1];
-        have_voted = IntSet.empty;
-        votes =
-          candidates1
-          |> List.map (fun candidate -> candidate, Array.make 7 0)
-          |> CandidateMap.of_list };
-      { id = 2;
-        kind = "General Elections";
-        name = "UK";
-        date = "3024";
-        is_running = false;
-        candidates = [candidate2];
-        voters = [2];
-        have_voted = IntSet.empty;
-        votes = CandidateMap.of_list [(candidate2, Array.make 7 0)] };
-    ] in
-    { user_data; id_counter = 0; election_data }
+    { user_data; id_counter = 1; election_data = [] }
 end

@@ -73,44 +73,66 @@ module Make (Services : Services.S) = struct
 
   let create_user request = let open M.Syntax in M.retract @@
     let* json = get_json_body request in
-    let* username, password =
+    let* user, name, password =
       begin let (let*) = Option.bind in
         let* l = Utils.object_of_json_opt json in
-        let* n = List.assoc_opt "username" l in
+        let* u = List.assoc_opt "username" l in
+        let* n = List.assoc_opt "name" l in
         let* p = List.assoc_opt "password" l in
+        let* user = Utils.string_of_json_opt u in
         let* name = Utils.string_of_json_opt n in
         let* password = Utils.string_of_json_opt p in
-        Some (name, password)
+        Some (user, name, password)
       end
       |> M.lift_option
       |> M.on_error `Bad_Request ~message:"JSON object does not have the expected shape"
     in
-    let* () = M.guard (String.length username > 0)
+    let* () = M.guard (String.length user > 0)
       |> M.on_error `Bad_Request ~message:"Empty username"
     in
-    let* () = M.guard (not (Db.username_exists db ~username))
+    let* () = M.guard (String.length user <= 32)
+      |> M.on_error `Bad_Request ~message:"Username is too long"
+    in
+    let valid_char c =
+      let code = Char.code c in
+      code >= 33 && code <= 126 (* non-space printable ascii *)
+    in
+    let* () = M.guard (String.for_all valid_char user)
+      |> M.on_error `Bad_Request ~message:"Username is not non-space printable ascii only"
+    in
+    let* () = M.guard (not (Db.username_exists db ~username:user))
       |> M.on_error `Not_Acceptable ~message:"This username is already taken"
     in
-    let+ () = M.guard (String.length password >= 8)
+    let* () = M.guard (String.length name > 0)
+      |> M.on_error `Bad_Request ~message:"Empty name"
+    in
+    let* () = M.guard (String.length name <= 64)
+      |> M.on_error `Bad_Request ~message:"Name is too long"
+    in
+    let* () = M.guard (String.length password >= 8)
       |> M.on_error `Bad_Request ~message:"Password must contain at least 8 characters"
     in
-    let voter_id = Auth.create_user auth ~password in
-    Db.add_user_info db ~voter_id UserInfo.{ name = username };
+    let+ () = M.guard (String.length password <= 64)
+      |> M.on_error `Bad_Request ~message:"Password is too long"
+    in
+    let voter_id = Auth.create_user auth ~user ~password in
+    Db.add_user_info db ~voter_id UserInfo.{ user; name };
     Dream.response ~status:`OK (Json.to_string @@ `Assoc [("id", `Int voter_id)])
   
   let create_session request = let open M.Syntax in M.retract @@
     let* json = get_json_body request in
-    let* voter_id, password =
+    let* user, password =
       begin
         match json with
-        | `Assoc [("voter_id", `Int voter_id); ("password", `String password)] ->
-          Some (voter_id, password)
+        | `Assoc [("username", `String username); ("password", `String password)] ->
+          Some (username, password)
         | _ -> None
       end
       |> M.lift_option
       |> M.on_error `Bad_Request ~message:"JSON object does not have the expected shape"
     in
-    let+ () = M.guard (Auth.valid_credentials auth { voter_id; password })
+    let+ voter_id = Auth.valid_credentials auth ~user ~password
+      |> M.lift_option
       |> M.on_error `Unauthorized ~message:"Invalid credentials"
     in
     let access_token, refresh_token = Auth.create_session auth ~voter_id in
@@ -145,11 +167,14 @@ module Make (Services : Services.S) = struct
 (*   └───────────────┘                                                                            *)
 
   let whoami request = let open M.Syntax in M.retract @@
-    let+ { name } = Db.get_user_info db ~voter_id:(get_voter_id request)
+    let+ { user; name } = Db.get_user_info db ~voter_id:(get_voter_id request)
       |> M.lift_option
       |> M.on_error `Internal_Server_Error ~message:"Voter not found"
     in
-    Dream.response ~status:`OK (Json.to_string @@ `Assoc [("name", `String name)])
+    Dream.response ~status:`OK (Json.to_string @@ `Assoc [
+      ("username", `String user);
+      ("name", `String name);
+    ])
 
 (*   ┌───────────────────────────────┐                                                            *)
 (* ──┤ Domain-related user endpoints ├─────────────────────────────────────────────────────────── *)
@@ -293,8 +318,8 @@ module Make (Services : Services.S) = struct
     begin
       Db.get_all_user_info db
       |> IntMap.bindings
-      |> List.map (fun (voter_id, UserInfo.{ name }) ->
-          `Assoc [("id", `Int voter_id); ("name", `String name)])
+      |> List.map (fun (voter_id, UserInfo.{ user; name }) ->
+          `Assoc [("id", `Int voter_id); ("username", `String user); ("name", `String name)])
       |> fun l -> Json.to_string (`List l)
       |> Dream.response ~status:`OK
     end

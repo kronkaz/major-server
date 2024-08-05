@@ -24,4 +24,6 @@ module type S = sig
   val votes_of_election : db -> election_id:int -> int array CandidateMap.t
 end
 
-module Default : S
+module Default : functor (_ : sig
+  val admin_username : string
+end) -> S
