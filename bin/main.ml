@@ -4,31 +4,34 @@ module M = App_utils
 
 let parse_args () =
   let test = ref false in
-  let port = ref (-1) in
   Arg.parse
     [ ("--test", Set test, " Run the server in test mode");
-      ("--port", Set_int port, " Open the server on the given port");
       ("-help", Unit Fun.id, "") ]
     (fun _ -> ())
-    "major --port PORT [--test]";
-  if !port = -1 then failwith "expected --port";
-  if !port < 1024 || !port > 63335 then
-    failwith (Printf.sprintf "invalid port: %d" !port);
-  (!test, !port)
+    "major [--test]";
+  !test
 
-let parse_admin_credentials () =
-  match Sys.getenv_opt "ADMIN_USER", Sys.getenv_opt "ADMIN_PASSWORD" with
-  | Some user, Some password -> (user, password)
-  | _ -> failwith "expected admin user and password as environment variables"
-
+let parse_admin_credentials () = let (let*) = Option.bind in let (>>=) = Option.bind in
+  let* port = Sys.getenv_opt "PORT" >>= int_of_string_opt in
+  let* admin_user = Sys.getenv_opt "ADMIN_USER" in
+  let* admin_password = Sys.getenv_opt "ADMIN_PASSWORD" in
+  Some (port, admin_user, admin_password)
+  
 let () =
-  let test, port = parse_args () in
-  let admin_credentials = parse_admin_credentials () in
+  let test = parse_args () in
+  let (port, admin_user, admin_password) =
+    Option.value (parse_admin_credentials ())
+      ~default:(failwith "no valid port, admin user and admin password found in environment")
+  in
+  if port < 1024 || port > 63335 then
+    failwith (Printf.sprintf "invalid port: %d" port);
   if test then
     let module App = App.Make(struct
-      module Auth = Auth_service.Default(struct let admin_credentials = admin_credentials end)
-      module Db = Database_service.Default(struct let admin_username = fst admin_credentials end)
+      module Auth = Auth_service.Default(struct
+        let admin_credentials = (admin_user, admin_password)
+      end)
+      module Db = Database_service.Default(struct let admin_username = admin_user end)
     end) in
-    App.start { port }
+    App.start { port; test }
   else
     ()

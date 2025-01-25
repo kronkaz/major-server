@@ -25,8 +25,8 @@ module Make (Services : Services.S) = struct
   module Auth = Services.Auth
   module Db = Services.Db
 
-  let auth = Auth.create ()
-  let db = Db.create ()
+  let auth = ref @@ Auth.create ()
+  let db = ref @@ Db.create ()
 
 (*   ┌───────────────────────────┐                                                                *)
 (* ──┤ Authentication middleware ├─────────────────────────────────────────────────────────────── *)
@@ -36,7 +36,7 @@ module Make (Services : Services.S) = struct
 
   let bearer_middleware handler request = let open M.Syntax in M.retract @@
     let* access_token = get_header_token request in
-    let* voter_id = Auth.validate_session auth ~access_token
+    let* voter_id = Auth.validate_session !auth ~access_token
       |> M.lift_result
       |> M.on_error `Unauthorized
     in
@@ -62,7 +62,7 @@ module Make (Services : Services.S) = struct
       |> M.lift_option
       |> M.on_error `Unauthorized ~message:"Invalid credentials format"
     in
-    let* () = M.guard (Auth.valid_admin_credentials auth ~user ~password)
+    let* () = M.guard (Auth.valid_admin_credentials !auth ~user ~password)
       |> M.on_error `Unauthorized ~message:"Invalid credentials"
     in
     M.ok @@ handler request
@@ -100,7 +100,7 @@ module Make (Services : Services.S) = struct
     let* () = M.guard (String.for_all valid_char user)
       |> M.on_error `Bad_Request ~message:"Username is not non-space printable ascii only"
     in
-    let* () = M.guard (not (Db.username_exists db ~username:user))
+    let* () = M.guard (not (Db.username_exists !db ~username:user))
       |> M.on_error `Not_Acceptable ~message:"This username is already taken"
     in
     let* () = M.guard (String.length name > 0)
@@ -115,8 +115,8 @@ module Make (Services : Services.S) = struct
     let+ () = M.guard (String.length password <= 64)
       |> M.on_error `Bad_Request ~message:"Password is too long"
     in
-    let voter_id = Auth.create_user auth ~user ~password in
-    Db.add_user_info db ~voter_id UserInfo.{ user; name };
+    let voter_id = Auth.create_user !auth ~user ~password in
+    Db.add_user_info !db ~voter_id UserInfo.{ user; name };
     Dream.response ~status:`OK (Json.to_string @@ `Assoc [("id", `Int voter_id)])
   
   let create_session request = let open M.Syntax in M.retract @@
@@ -131,11 +131,11 @@ module Make (Services : Services.S) = struct
       |> M.lift_option
       |> M.on_error `Bad_Request ~message:"JSON object does not have the expected shape"
     in
-    let+ voter_id = Auth.valid_credentials auth ~user ~password
+    let+ voter_id = Auth.valid_credentials !auth ~user ~password
       |> M.lift_option
       |> M.on_error `Unauthorized ~message:"Invalid credentials"
     in
-    let access_token, refresh_token = Auth.create_session auth ~voter_id in
+    let access_token, refresh_token = Auth.create_session !auth ~voter_id in
     let response_body = Json.to_string @@ `Assoc [
       ("access_token", `String access_token);
       ("refresh_token", `String refresh_token);
@@ -144,7 +144,7 @@ module Make (Services : Services.S) = struct
   
   let refresh_session request = let open M.Syntax in M.retract @@
     let* refresh_token = get_header_token request in
-    let+ access_token, refresh_token = Auth.refresh_session auth ~refresh_token
+    let+ access_token, refresh_token = Auth.refresh_session !auth ~refresh_token
       |> M.lift_result
       |> M.on_error `Unauthorized (* message provided by auth service *)
     in
@@ -156,7 +156,7 @@ module Make (Services : Services.S) = struct
   
   let delete_session request = let open M.Syntax in M.retract @@
     let* access_token = get_header_token request in
-    let+ () = Auth.delete_session auth ~access_token
+    let+ () = Auth.delete_session !auth ~access_token
       |> M.lift_result
       |> M.on_error `Unauthorized
     in
@@ -167,7 +167,7 @@ module Make (Services : Services.S) = struct
 (*   └───────────────┘                                                                            *)
 
   let whoami request = let open M.Syntax in M.retract @@
-    let+ { user; name } = Db.get_user_info db ~voter_id:(get_voter_id request)
+    let+ { user; name } = Db.get_user_info !db ~voter_id:(get_voter_id request)
       |> M.lift_option
       |> M.on_error `Internal_Server_Error ~message:"Voter not found"
     in
@@ -182,7 +182,7 @@ module Make (Services : Services.S) = struct
 
   let get_elections request = M.retract @@ M.return @@
     let elections_json =
-      Db.election_summaries_of_voter db ~voter_id:(get_voter_id request)
+      Db.election_summaries_of_voter !db ~voter_id:(get_voter_id request)
       |> List.map Election_summary.to_json
       |> fun l -> `List l
     in
@@ -193,23 +193,23 @@ module Make (Services : Services.S) = struct
       |> M.lift_option
       |> M.on_error `Bad_Request ~message:"Wrong election ID format"
     in
-    let* () = M.guard (Db.election_exists db ~election_id)
+    let* () = M.guard (Db.election_exists !db ~election_id)
       |> M.on_error `Bad_Request ~message:"Election does not exist"
     in
-    let+ () = M.guard (Db.can_vote db ~voter_id:(get_voter_id request) ~election_id)
+    let+ () = M.guard (Db.can_vote !db ~voter_id:(get_voter_id request) ~election_id)
       |> M.on_error `Forbidden ~message:"The current voter does not take part in this election"
     in
-    let election = Election_info.to_json @@ Db.get_election db ~election_id in
+    let election = Election_info.to_json @@ Db.get_election !db ~election_id in
     Dream.response ~status:`OK (Json.to_string election)
   
   let vote request = let open M.Syntax in M.retract @@
     let* election_id = M.lift_option @@ int_of_string_opt (Dream.param request "id")
       |> M.on_error `Bad_Request ~message:"Wrong election ID format"
     in
-    let* () = M.guard (Db.election_exists db ~election_id)
+    let* () = M.guard (Db.election_exists !db ~election_id)
       |> M.on_error `Bad_Request ~message:"Election does not exist"
     in
-    let candidates = Db.candidates db ~election_id in
+    let candidates = Db.candidates !db ~election_id in
     let* json = get_json_body request in
     let* ballot, ballot_size =
       begin
@@ -236,16 +236,16 @@ module Make (Services : Services.S) = struct
       |> M.on_error `Bad_Request ~message:"Incomplete ballot"
     in
     let voter_id = get_voter_id request in
-    let* () = M.guard (Db.can_vote db ~voter_id ~election_id)
+    let* () = M.guard (Db.can_vote !db ~voter_id ~election_id)
       |> M.on_error `Forbidden ~message:"The current voter does not take part in this election"
     in
-    let* () = M.guard (Db.election_is_running db ~election_id)
+    let* () = M.guard (Db.election_is_running !db ~election_id)
       |> M.on_error `Forbidden ~message:"Election is no longer running"
     in
-    let+ () = M.guard (not @@ Db.has_voted db ~voter_id ~election_id)
+    let+ () = M.guard (not @@ Db.has_voted !db ~voter_id ~election_id)
       |> M.on_error `Forbidden ~message:"The current voter has already voted"
     in
-    Db.vote db ~election_id ~voter_id ~ballot;
+    Db.vote !db ~election_id ~voter_id ~ballot;
     Dream.response ~status:`OK ""
 
   (* compute a / b in percentage rounded to 0.01 *)
@@ -259,16 +259,16 @@ module Make (Services : Services.S) = struct
       |> M.lift_option
       |> M.on_error `Bad_Request ~message:"Wrong election ID format"
     in
-    let* () = M.guard (Db.election_exists db ~election_id)
+    let* () = M.guard (Db.election_exists !db ~election_id)
       |> M.on_error `Bad_Request ~message:"Election does not exist"
     in
-    let* () = M.guard (not @@ Db.election_is_running db ~election_id)
+    let* () = M.guard (not @@ Db.election_is_running !db ~election_id)
       |> M.on_error `Forbidden ~message:"Election is still running"
     in
-    let+ () = M.guard (Db.can_vote db ~voter_id:(get_voter_id request) ~election_id)
+    let+ () = M.guard (Db.can_vote !db ~voter_id:(get_voter_id request) ~election_id)
       |> M.on_error `Forbidden ~message:"The current voter does not take part in this election"
     in
-    let votes = Db.votes_of_election db ~election_id in
+    let votes = Db.votes_of_election !db ~election_id in
     let votes_cast =
       votes
       |> CandidateMap.to_seq
@@ -283,7 +283,7 @@ module Make (Services : Services.S) = struct
       |> CandidateMap.map (fun candidate_votes ->
            Array.map (fun rating_count -> ratio100 rating_count votes_cast) candidate_votes)
     in
-    let participation = ratio100 votes_cast (Db.nb_voters db ~election_id) in
+    let participation = ratio100 votes_cast (Db.nb_voters !db ~election_id) in
     let majority_ratings, winners = Judgment.majority_judgment ~votes in
     let scores_and_ratings =
       CandidateMap.merge
@@ -316,7 +316,7 @@ module Make (Services : Services.S) = struct
 
   let get_users _ = M.retract @@ M.return @@
     begin
-      Db.get_all_user_info db
+      Db.get_all_user_info !db
       |> IntMap.bindings
       |> List.map (fun (voter_id, UserInfo.{ user; name }) ->
           `Assoc [("id", `Int voter_id); ("username", `String user); ("name", `String name)])
@@ -343,19 +343,24 @@ module Make (Services : Services.S) = struct
       { election with candidates =
           election.candidates
           |> List.mapi (fun i candidate -> Candidate.{ candidate with id = i }) } in
-    Dream.response ~status:`OK @@ Json.to_string @@ `Int (Db.add_election db election)
+    Dream.response ~status:`OK @@ Json.to_string @@ `Int (Db.add_election !db election)
 
   let terminate_election request = let open M.Syntax in M.retract @@
     let* election_id = int_of_string_opt (Dream.param request "id")
       |> M.lift_option
       |> M.on_error `Bad_Request ~message:"Wrong election ID format"
     in
-    let* () = M.guard (Db.election_exists db ~election_id)
+    let* () = M.guard (Db.election_exists !db ~election_id)
       |> M.on_error `Bad_Request ~message:"Election does not exist"
     in
-    let+ () = M.guard (Db.election_is_running db ~election_id)
+    let+ () = M.guard (Db.election_is_running !db ~election_id)
       |> M.on_error `Not_Acceptable ~message:"Election is not running"
     in
-    Db.terminate_election db ~election_id;
+    Db.terminate_election !db ~election_id;
     Dream.response ~status:`OK ""
+  
+  let reset_app _ =
+    auth := Auth.create ();
+    db := Db.create ();
+    M.retract @@ M.return @@ Dream.response ~status:`OK ""
 end

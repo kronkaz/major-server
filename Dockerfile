@@ -18,5 +18,4 @@ RUN apk add libev gmp
 COPY --from=base /home/opam/major/_build/default/bin/main.exe major.exe
 COPY --from=base /home/opam/major/depexts depexts
 RUN cat depexts | xargs apk --update add && rm -rf /var/cache/apk/*
-EXPOSE 8000
 ENTRYPOINT ["./major.exe"]

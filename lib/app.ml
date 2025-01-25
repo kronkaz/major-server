@@ -2,10 +2,11 @@ module Make (Services : Services.S) = struct
   module Api = Api.Make(Services)
 
   type config = {
-    port : int
+    port : int;
+    test : bool
   }
 
-  let start { port } =
+  let start { port; test } =
     Random.self_init ();
     Dream.run ~port
     @@ Dream.logger
@@ -31,7 +32,10 @@ module Make (Services : Services.S) = struct
           Dream.get "/users" Api.get_users;
           Dream.post "/elections" Api.create_election;
           Dream.patch "/elections/:id" Api.terminate_election;
-        ]
+        ];
+
+        (* in test mode, route to reset the whole app *)
+        if test then Dream.delete "/reset" Api.reset_app else Dream.no_route
       ]
     ]
 end

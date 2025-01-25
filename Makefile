@@ -13,7 +13,10 @@ openapi: openapi/template.html openapi/openapi.yml
 		> openapi/openapi.html
 
 run: build
-	ADMIN_USER=admin ADMIN_PASSWORD=1234 docker compose up -d
+	MAJOR_PORT=8000 MAJOR_ADMIN_USER=admin MAJOR_ADMIN_PASSWORD=1234 docker compose up -d
+
+runlocal: build
+	PORT=8000 ADMIN_USER=admin ADMIN_PASSWORD=1234 dune exec major -- --test
 
 test:
 	dune exec test

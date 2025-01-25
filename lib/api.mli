@@ -14,4 +14,6 @@ module Make : functor (_ : Services.S) -> sig
   val create_election : Dream.request -> Dream.response Lwt.t
   val terminate_election : Dream.request -> Dream.response Lwt.t
   val get_election_results : Dream.request -> Dream.response Lwt.t
+
+  val reset_app : Dream.request -> Dream.response Lwt.t
 end

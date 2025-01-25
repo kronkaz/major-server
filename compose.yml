@@ -2,8 +2,10 @@ services:
   major:
     build: .
     ports:
-      - "8000:8000"
-    command: --test --port 8000
+      - "${MAJOR_PORT}:8000"
+    command: --test
+    network_mode: host
     environment:
-      ADMIN_USER: ${ADMIN_USER}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      PORT: 8000
+      ADMIN_USER: ${MAJOR_ADMIN_USER}
+      ADMIN_PASSWORD: ${MAJOR_ADMIN_PASSWORD}
